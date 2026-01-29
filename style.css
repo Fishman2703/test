@@ -210,3 +210,46 @@ li {
         font-size: 2em;
     }
 }
+/* Стили для камеры */
+#cameraPreview {
+    background: #000;
+    transform: scaleX(-1); /* Зеркальное отображение для естественности */
+}
+
+/* Индикатор сканирования */
+.scan-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 250px;
+    height: 250px;
+    border: 3px dashed #4facfe;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { border-color: #4facfe; }
+    50% { border-color: #00f2fe; }
+    100% { border-color: #4facfe; }
+}
+
+/* Кнопки управления камерой */
+.camera-controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+/* Загрузка фото */
+#fileInput {
+    display: none;
+}
+
+.photo-preview {
+    max-width: 300px;
+    margin: 15px auto;
+    border-radius: 10px;
+    overflow: hidden;
+}

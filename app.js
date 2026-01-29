@@ -159,59 +159,385 @@ function showLoading(show) {
 }
 
 // Инициализация сканера
-function initScanner() {
-    scanner = new Html5Qrcode("qr-reader");
+// Инициализация сканера
+async function initScanner() {
+    console.log('Инициализация сканера...');
     
-    startScannerBtn.style.display = 'none';
-    stopScannerBtn.style.display = 'inline-block';
+    // Проверяем поддержку API
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Ваш браузер не поддерживает доступ к камере. Пожалуйста, используйте ручной ввод.');
+        return;
+    }
     
-    const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0
-    };
-    
-    scanner.start(
-        { facingMode: "environment" },
-        config,
-        onScanSuccess,
-        onScanError
-    ).catch(err => {
-        console.error(err);
-        alert('Не удалось запустить камеру. Проверьте разрешения.');
-        resetScanner();
+    try {
+        // Запрашиваем доступ к камере
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: 'environment', // Задняя камера
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        });
+        
+        // Скрываем кнопку запуска, показываем кнопку остановки
+        startScannerBtn.style.display = 'none';
+        stopScannerBtn.style.display = 'inline-block';
+        
+        // Создаём видео элемент для камеры
+        const scannerContainer = document.getElementById('qr-reader');
+        scannerContainer.innerHTML = `
+            <div style="position: relative;">
+                <video id="cameraPreview" autoplay playsinline 
+                       style="width: 100%; border-radius: 10px; border: 3px solid #4facfe;">
+                </video>
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                           width: 250px; height: 250px; border: 3px dashed #fff; pointer-events: none;">
+                    <div style="position: absolute; top: 5px; left: 5px; color: white; font-size: 12px;">
+                        🎯 Наведите на штрих-код
+                    </div>
+                </div>
+            </div>
+            <div style="text-align: center; margin-top: 10px;">
+                <button id="switchCamera" class="btn" style="background: #6c757d; color: white;">
+                    🔄 Переключить камеру
+                </button>
+            </div>
+        `;
+        
+        // Настраиваем видео поток
+        const video = document.getElementById('cameraPreview');
+        video.srcObject = stream;
+        
+        // Загружаем библиотеку для распознавания штрих-кодов
+        await loadBarcodeScanner();
+        
+        // Запускаем распознавание
+        startBarcodeDetection(video);
+        
+        // Переключение камеры
+        document.getElementById('switchCamera').addEventListener('click', () => {
+            switchCamera(stream, video);
+        });
+        
+        // Сохраняем поток для остановки
+        window.currentStream = stream;
+        
+    } catch (error) {
+        console.error('Ошибка доступа к камере:', error);
+        handleCameraError(error);
+    }
+}
+
+// Загрузка библиотеки для распознавания штрих-кодов
+function loadBarcodeScanner() {
+    return new Promise((resolve) => {
+        // Используем библиотеку ZXing
+        if (!window.BarcodeDetector) {
+            // Загружаем полифил
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/@zxing/library@latest/umd/index.min.js';
+            script.onload = () => {
+                console.log('ZXing библиотека загружена');
+                resolve();
+            };
+            document.head.appendChild(script);
+        } else {
+            resolve();
+        }
     });
+}
+
+// Распознавание штрих-кодов
+async function startBarcodeDetection(video) {
+    let lastDetection = 0;
+    const detectionDelay = 1000; // 1 секунда между распознаваниями
+    
+    try {
+        // Создаём детектор
+        const barcodeDetector = new BarcodeDetector({
+            formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39']
+        });
+        
+        console.log('Детектор штрих-кодов создан');
+        
+        // Функция для обработки кадра
+        async function detectFrame() {
+            if (!window.isScanningActive) return;
+            
+            try {
+                const barcodes = await barcodeDetector.detect(video);
+                
+                if (barcodes.length > 0) {
+                    const now = Date.now();
+                    if (now - lastDetection > detectionDelay) {
+                        lastDetection = now;
+                        const barcode = barcodes[0];
+                        console.log('Найден штрих-код:', barcode.rawValue);
+                        
+                        // Останавливаем сканирование
+                        stopScanner();
+                        
+                        // Ищем продукт
+                        searchProduct(barcode.rawValue);
+                        
+                        // Звуковой сигнал (опционально)
+                        playBeepSound();
+                    }
+                }
+                
+                // Продолжаем сканирование
+                if (window.isScanningActive) {
+                    requestAnimationFrame(detectFrame);
+                }
+            } catch (err) {
+                console.log('Ожидание штрих-кода...');
+                if (window.isScanningActive) {
+                    setTimeout(detectFrame, 500);
+                }
+            }
+        }
+        
+        window.isScanningActive = true;
+        detectFrame();
+        
+    } catch (error) {
+        console.error('Ошибка детектора:', error);
+        
+        // Альтернативный метод через библиотеку QuaggaJS
+        loadQuaggaJS(video);
+    }
+}
+
+// Альтернативный метод через QuaggaJS
+function loadQuaggaJS(video) {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js';
+    script.onload = () => {
+        console.log('QuaggaJS загружена');
+        
+        // Создаём canvas для захвата кадра
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        function captureAndDecode() {
+            if (!window.isScanningActive) return;
+            
+            // Захватываем кадр
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Конвертируем в ImageData
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // Пытаемся распознать
+            Quagga.decodeSingle(
+                {
+                    src: canvas.toDataURL(),
+                    numOfWorkers: 0,
+                    inputStream: {
+                        size: 800
+                    },
+                    decoder: {
+                        readers: ['ean_reader', 'ean_8_reader', 'code_128_reader']
+                    }
+                },
+                function(result) {
+                    if (result && result.codeResult) {
+                        console.log('Quagga найден код:', result.codeResult.code);
+                        stopScanner();
+                        searchProduct(result.codeResult.code);
+                        playBeepSound();
+                    } else {
+                        // Продолжаем сканирование
+                        setTimeout(captureAndDecode, 500);
+                    }
+                }
+            );
+        }
+        
+        window.isScanningActive = true;
+        captureAndDecode();
+    };
+    document.head.appendChild(script);
+}
+
+// Переключение камеры
+async function switchCamera(oldStream, video) {
+    try {
+        // Останавливаем старый поток
+        oldStream.getTracks().forEach(track => track.stop());
+        
+        // Определяем текущую камеру
+        const currentFacingMode = oldStream.getVideoTracks()[0].getSettings().facingMode;
+        const newFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+        
+        // Запрашиваем новую камеру
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: newFacingMode,
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        });
+        
+        video.srcObject = stream;
+        window.currentStream = stream;
+        
+        console.log('Камера переключена на:', newFacingMode);
+        
+    } catch (error) {
+        console.error('Ошибка переключения камеры:', error);
+        alert('Не удалось переключить камеру');
+    }
 }
 
 // Остановка сканера
 function stopScanner() {
-    if (scanner) {
-        scanner.stop().then(() => {
-            resetScanner();
-        }).catch(err => {
-            console.error(err);
-            resetScanner();
-        });
+    console.log('Остановка сканера...');
+    
+    window.isScanningActive = false;
+    
+    // Останавливаем видео поток
+    if (window.currentStream) {
+        window.currentStream.getTracks().forEach(track => track.stop());
+        window.currentStream = null;
     }
-}
-
-// Сброс сканера
-function resetScanner() {
-    scanner = null;
+    
+    // Восстанавливаем кнопки
     startScannerBtn.style.display = 'inline-block';
     stopScannerBtn.style.display = 'none';
+    
+    // Очищаем контейнер
+    const scannerContainer = document.getElementById('qr-reader');
+    scannerContainer.innerHTML = '<div style="text-align: center; color: #666;">Сканер выключен</div>';
 }
 
-// Успешное сканирование
-function onScanSuccess(decodedText) {
-    console.log('Найден штрих-код:', decodedText);
-    searchProduct(decodedText);
-    stopScanner();
+// Обработка ошибок камеры
+function handleCameraError(error) {
+    console.error('Camera error:', error);
+    
+    let message = 'Не удалось получить доступ к камере. ';
+    
+    switch (error.name) {
+        case 'NotAllowedError':
+            message += 'Вы запретили доступ к камере. Разрешите доступ в настройках браузера.';
+            break;
+        case 'NotFoundError':
+            message += 'Камера не найдена. Убедитесь, что камера подключена.';
+            break;
+        case 'NotSupportedError':
+            message += 'Ваш браузер не поддерживает доступ к камере. Попробуйте другой браузер.';
+            break;
+        case 'NotReadableError':
+            message += 'Камера уже используется другим приложением.';
+            break;
+        default:
+            message += 'Неизвестная ошибка: ' + error.message;
+    }
+    
+    alert(message);
+    
+    // Показываем альтернативный вариант - использование файла
+    showFileUploadOption();
 }
 
-// Ошибка сканирования
-function onScanError(error) {
-    // Игнорируем ошибки поиска (это нормально)
+// Альтернатива: загрузка фото
+function showFileUploadOption() {
+    const scannerContainer = document.getElementById('qr-reader');
+    scannerContainer.innerHTML = `
+        <div style="text-align: center; padding: 20px;">
+            <h3>📷 Альтернативный способ</h3>
+            <p>Сфотографируйте штрих-код и загрузите фото:</p>
+            <input type="file" id="fileInput" accept="image/*" capture="environment" 
+                   style="display: none;">
+            <button id="uploadPhoto" class="btn btn-primary">
+                📸 Сфотографировать штрих-код
+            </button>
+            <div id="previewContainer" style="margin-top: 15px;"></div>
+        </div>
+    `;
+    
+    document.getElementById('uploadPhoto').addEventListener('click', () => {
+        document.getElementById('fileInput').click();
+    });
+    
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            processImageFile(file);
+        }
+    });
+}
+
+// Обработка загруженного изображения
+async function processImageFile(file) {
+    const reader = new FileReader();
+    
+    reader.onload = async function(e) {
+        const img = new Image();
+        img.src = e.target.result;
+        
+        img.onload = async function() {
+            // Создаём canvas
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            // Показываем превью
+            const preview = document.getElementById('previewContainer');
+            preview.innerHTML = `
+                <img src="${img.src}" style="max-width: 300px; border-radius: 10px;">
+                <p>⏳ Анализ изображения...</p>
+            `;
+            
+            // Пытаемся распознать штрих-код
+            try {
+                const barcodeDetector = new BarcodeDetector({
+                    formats: ['ean_13', 'ean_8', 'upc_a']
+                });
+                
+                const barcodes = await barcodeDetector.detect(img);
+                
+                if (barcodes.length > 0) {
+                    const barcode = barcodes[0].rawValue;
+                    preview.innerHTML += `<p style="color: green;">✅ Найден код: ${barcode}</p>`;
+                    searchProduct(barcode);
+                } else {
+                    preview.innerHTML += `<p style="color: red;">❌ Штрих-код не найден на фото</p>`;
+                }
+            } catch (error) {
+                preview.innerHTML += `<p style="color: red;">❌ Ошибка распознавания</p>`;
+            }
+        };
+    };
+    
+    reader.readAsDataURL(file);
+}
+
+// Звуковой сигнал
+function playBeepSound() {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.5);
+    } catch (e) {
+        console.log('Звук не поддерживается');
+    }
 }
 
 // Сохранение в историю
