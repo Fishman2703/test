@@ -3,94 +3,326 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>📱 Сканер БЖУ</title>
+    <title>📱 Сканер БЖУ | Анализ питания</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Для распознавания штрих-кодов -->
-    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@latest"></script>
-    <!-- Для работы с камерой в старых браузерах -->
-    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 <body>
+    <!-- Панель управления -->
+    <div class="control-panel">
+        <button id="themeToggle" class="theme-toggle" title="Сменить тему">
+            <i class="fas fa-moon"></i>
+        </button>
+        <button id="closeApp" class="close-btn" title="Закрыть">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+
     <div class="container">
         <!-- Шапка -->
         <header>
-            <h1>🍎 Сканер БЖУ</h1>
-            <p>Наведите камеру на штрих-код продукта</p>
+            <h1>Сканер БЖУ</h1>
+            <p>Отсканируйте штрих-код продукта для анализа питательной ценности</p>
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
         </header>
 
-        <!-- Секция сканера -->
-        <div class="scanner-section">
-            <div id="qr-reader" style="width: 100%; max-width: 400px; margin: 0 auto;"></div>
-            <button id="startScanner" class="btn btn-primary">🎥 Включить сканер</button>
-            <button id="stopScanner" class="btn btn-secondary" style="display: none;">⏹ Остановить</button>
-        </div>
-
-        <!-- Ручной ввод -->
-        <div class="manual-input">
-            <h3>Или введите штрих-код вручную:</h3>
-            <input type="text" id="manualBarcode" placeholder="Например: 5901234123457">
-            <button id="checkManual" class="btn">🔍 Проверить</button>
-        </div>
-
-        <!-- Результат -->
-        <div id="result" class="result" style="display: none;">
-            <h2 id="productName">Название продукта</h2>
-            <div class="nutrition-grid">
-                <div class="nutrient">
-                    <div class="nutrient-label">🔥 Калории</div>
-                    <div class="nutrient-value" id="calories">0 ккал</div>
+        <!-- Основная секция -->
+        <main>
+            <!-- Секция сканера -->
+            <section class="section scanner-section">
+                <h2 class="section-title">
+                    <i class="fas fa-camera"></i>
+                    Сканирование
+                </h2>
+                
+                <div id="qr-reader" class="camera-placeholder">
+                    <div class="scanner-placeholder">
+                        <i class="fas fa-barcode" style="font-size: 48px; color: var(--text-muted); margin-bottom: 15px;"></i>
+                        <p style="color: var(--text-secondary);">Сканер отключен</p>
+                        <p style="color: var(--text-muted); font-size: 14px; margin-top: 10px;">
+                            Нажмите кнопку ниже для включения камеры
+                        </p>
+                    </div>
                 </div>
-                <div class="nutrient">
-                    <div class="nutrient-label">🥩 Белки</div>
-                    <div class="nutrient-value" id="protein">0 г</div>
+                
+                <div class="scanner-controls" style="text-align: center; margin-top: 20px;">
+                    <button id="startScanner" class="btn btn-primary">
+                        <i class="fas fa-play"></i>
+                        Включить сканер
+                    </button>
+                    <button id="stopScanner" class="btn btn-secondary hidden">
+                        <i class="fas fa-stop"></i>
+                        Остановить
+                    </button>
                 </div>
-                <div class="nutrient">
-                    <div class="nutrient-label">🥑 Жиры</div>
-                    <div class="nutrient-value" id="fat">0 г</div>
-                </div>
-                <div class="nutrient">
-                    <div class="nutrient-label">🍞 Углеводы</div>
-                    <div class="nutrient-value" id="carbs">0 г</div>
-                </div>
-            </div>
-            
-            <div class="product-info">
-                <h3>📋 Дополнительная информация</h3>
-                <p><strong>Бренд:</strong> <span id="brand">Не указано</span></p>
-                <p><strong>Вес:</strong> <span id="weight">Не указано</span></p>
-                <p><strong>Штрих-код:</strong> <span id="barcode">-</span></p>
-            </div>
-            
-            <button id="saveProduct" class="btn btn-success">💾 Сохранить в историю</button>
-        </div>
+            </section>
 
-        <!-- История -->
-        <div class="history">
-            <h3>📜 История сканирований</h3>
-            <div id="historyList"></div>
-            <button id="clearHistory" class="btn btn-danger">🗑 Очистить историю</button>
-        </div>
+            <!-- Ручной ввод -->
+            <section class="section manual-input">
+                <h2 class="section-title">
+                    <i class="fas fa-keyboard"></i>
+                    Ручной ввод
+                </h2>
+                
+                <div class="input-group">
+                    <input type="text" id="manualBarcode" 
+                           placeholder="Введите штрих-код (например: 5901234123457)"
+                           maxlength="13">
+                    <button id="checkManual" class="btn btn-primary">
+                        <i class="fas fa-search"></i>
+                        Найти
+                    </button>
+                </div>
+                
+                <div class="test-codes" style="margin-top: 15px;">
+                    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 8px;">
+                        Тестовые штрих-коды:
+                    </p>
+                    <span class="code-chip" data-code="3017620422003">Nutella</span>
+                    <span class="code-chip" data-code="7622210288257">Oreo</span>
+                    <span class="code-chip" data-code="4014400900508">Red Bull</span>
+                    <span class="code-chip" data-code="5449000000996">Coca-Cola</span>
+                </div>
+            </section>
 
-        <!-- Инструкция -->
-        <div class="instructions">
-            <h3>💡 Как пользоваться?</h3>
-            <ol>
-                <li>Нажмите "Включить сканер"</li>
-                <li>Разрешите доступ к камере</li>
-                <li>Наведите камеру на штрих-код</li>
-                <li>Информация появится автоматически</li>
-            </ol>
-            <p><strong>Тестовые штрих-коды:</strong></p>
-            <ul>
-                <li>5901234123457 (пример)</li>
-                <li>3017620422003 (Nutella)</li>
-                <li>7622210288257 (Oreo)</li>
-            </ul>
-        </div>
+            <!-- Результат -->
+            <section id="result" class="section result hidden">
+                <h2 class="section-title">
+                    <i class="fas fa-chart-pie"></i>
+                    Результат анализа
+                </h2>
+                
+                <div class="product-header">
+                    <div class="product-title">
+                        <h2 id="productName">Название продукта</h2>
+                        <span class="product-barcode" id="barcode">0000000000000</span>
+                    </div>
+                    <button id="saveProduct" class="btn btn-success" style="min-width: auto;">
+                        <i class="fas fa-bookmark"></i>
+                    </button>
+                </div>
+                
+                <div class="nutrition-grid">
+                    <div class="nutrient">
+                        <span class="nutrient-icon">🔥</span>
+                        <div class="nutrient-label">Калории</div>
+                        <div class="nutrient-value" id="calories">0</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">ккал</div>
+                    </div>
+                    
+                    <div class="nutrient">
+                        <span class="nutrient-icon">🥩</span>
+                        <div class="nutrient-label">Белки</div>
+                        <div class="nutrient-value" id="protein">0</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">грамм</div>
+                    </div>
+                    
+                    <div class="nutrient">
+                        <span class="nutrient-icon">🥑</span>
+                        <div class="nutrient-label">Жиры</div>
+                        <div class="nutrient-value" id="fat">0</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">грамм</div>
+                    </div>
+                    
+                    <div class="nutrient">
+                        <span class="nutrient-icon">🍞</span>
+                        <div class="nutrient-label">Углеводы</div>
+                        <div class="nutrient-value" id="carbs">0</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">грамм</div>
+                    </div>
+                </div>
+                
+                <div class="product-info">
+                    <h3 style="color: var(--text-primary); margin-bottom: 15px;">
+                        <i class="fas fa-info-circle"></i> Информация о продукте
+                    </h3>
+                    
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Бренд:</span>
+                            <span class="info-value" id="brand">Не указано</span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">Вес/Объём:</span>
+                            <span class="info-value" id="weight">Не указано</span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">Дата сканирования:</span>
+                            <span class="info-value" id="scanDate">-</span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">Статус:</span>
+                            <span class="info-value" id="productStatus">
+                                <span style="color: var(--success-color);">
+                                    <i class="fas fa-check-circle"></i> Найдено
+                                </span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- История сканирований -->
+            <section class="section history">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 class="section-title" style="margin: 0;">
+                        <i class="fas fa-history"></i>
+                        История
+                    </h2>
+                    <button id="clearHistory" class="btn btn-danger" style="min-width: auto; padding: 8px 12px;">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+                
+                <div id="historyList" class="history-items">
+                    <!-- История будет загружена здесь -->
+                </div>
+                
+                <p style="text-align: center; color: var(--text-muted); font-size: 14px; margin-top: 15px;">
+                    <i class="fas fa-info-circle"></i>
+                    Нажмите на запись для повторного поиска
+                </p>
+            </section>
+
+            <!-- Инструкция -->
+            <section class="section instructions">
+                <h2 class="section-title">
+                    <i class="fas fa-question-circle"></i>
+                    Как пользоваться?
+                </h2>
+                
+                <ol class="instructions-list">
+                    <li>Нажмите "Включить сканер" и разрешите доступ к камере</li>
+                    <li>Наведите камеру на штрих-код продукта</li>
+                    <li>Дождитесь автоматического распознавания</li>
+                    <li>Просмотрите информацию о питательной ценности</li>
+                    <li>Сохраните продукт в истории для быстрого доступа</li>
+                </ol>
+                
+                <div style="margin-top: 20px; padding: 15px; background: var(--bg-tertiary); border-radius: var(--radius-sm);">
+                    <h4 style="color: var(--text-primary); margin-bottom: 10px;">
+                        <i class="fas fa-lightbulb"></i> Советы по сканированию
+                    </h4>
+                    <ul style="color: var(--text-secondary); font-size: 14px; margin-left: 20px;">
+                        <li>Обеспечьте хорошее освещение</li>
+                        <li>Держите камеру параллельно штрих-коду</li>
+                        <li>Избегайте бликов и отражений</li>
+                        <li>Если не удаётся отсканировать, используйте ручной ввод</li>
+                    </ul>
+                </div>
+            </section>
+        </main>
+
+        <!-- Футер -->
+        <footer style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-color);">
+            <p style="text-align: center; color: var(--text-muted); font-size: 13px;">
+                <i class="fas fa-database"></i>
+                Данные предоставляются Open Food Facts API
+                <br>
+                <span style="font-size: 12px;">© 2024 Сканер БЖУ | v1.0</span>
+            </p>
+        </footer>
     </div>
 
+    <!-- Уведомление -->
+    <div id="notification" class="notification hidden"></div>
+
+    <!-- Скрипты -->
+    <script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
     <script src="app.js"></script>
+    
+    <script>
+        // Инициализация темы
+        document.addEventListener('DOMContentLoaded', function() {
+            // Проверяем сохранённую тему
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            
+            // Обновляем иконку темы
+            const themeIcon = document.querySelector('#themeToggle i');
+            themeIcon.className = savedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+            
+            // Обработчик переключения темы
+            document.getElementById('themeToggle').addEventListener('click', function() {
+                const currentTheme = document.documentElement.getAttribute('data-theme');
+                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                
+                // Применяем новую тему
+                document.documentElement.setAttribute('data-theme', newTheme);
+                localStorage.setItem('theme', newTheme);
+                
+                // Обновляем иконку
+                const icon = this.querySelector('i');
+                icon.className = newTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+                
+                // Показываем уведомление
+                showNotification(`Тема изменена на ${newTheme === 'dark' ? 'тёмную' : 'светлую'}`);
+            });
+            
+            // Обработчик закрытия приложения
+            document.getElementById('closeApp').addEventListener('click', function() {
+                if (window.Telegram && Telegram.WebApp && Telegram.WebApp.close) {
+                    Telegram.WebApp.close();
+                } else {
+                    if (confirm('Закрыть приложение?')) {
+                        window.close();
+                    }
+                }
+            });
+            
+            // Обработчики тестовых штрих-кодов
+            document.querySelectorAll('.code-chip').forEach(chip => {
+                chip.addEventListener('click', function() {
+                    const barcode = this.dataset.code;
+                    document.getElementById('manualBarcode').value = barcode;
+                    document.getElementById('checkManual').click();
+                    
+                    // Подсвечиваем выбранный чип
+                    document.querySelectorAll('.code-chip').forEach(c => {
+                        c.style.background = '';
+                        c.style.color = '';
+                    });
+                    this.style.background = 'var(--accent-color)';
+                    this.style.color = 'white';
+                });
+            });
+            
+            // Функция показа уведомлений
+            window.showNotification = function(message, type = 'success') {
+                const notification = document.getElementById('notification');
+                notification.textContent = message;
+                notification.className = `notification ${type}`;
+                notification.style.background = type === 'success' ? 'var(--success-color)' : 
+                                               type === 'error' ? 'var(--danger-color)' : 
+                                               type === 'warning' ? 'var(--warning-color)' : 
+                                               'var(--info-color)';
+                
+                notification.classList.remove('hidden');
+                
+                setTimeout(() => {
+                    notification.classList.add('hidden');
+                }, 3000);
+            };
+            
+            // Обновление прогресс-бара при прокрутке
+            function updateProgressBar() {
+                const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
+                const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+                const scrolled = (winScroll / height) * 100;
+                document.getElementById("progressFill").style.width = scrolled + "%";
+            }
+            
+            window.addEventListener('scroll', updateProgressBar);
+            
+            // Автофокус на поле ввода
+            document.getElementById('manualBarcode').focus();
+        });
+    </script>
 </body>
 </html>
