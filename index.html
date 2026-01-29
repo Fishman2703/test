@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📱 Сканер БЖУ</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Шапка -->
+        <header>
+            <h1>🍎 Сканер БЖУ</h1>
+            <p>Наведите камеру на штрих-код продукта</p>
+        </header>
+
+        <!-- Секция сканера -->
+        <div class="scanner-section">
+            <div id="qr-reader" style="width: 100%; max-width: 400px; margin: 0 auto;"></div>
+            <button id="startScanner" class="btn btn-primary">🎥 Включить сканер</button>
+            <button id="stopScanner" class="btn btn-secondary" style="display: none;">⏹ Остановить</button>
+        </div>
+
+        <!-- Ручной ввод -->
+        <div class="manual-input">
+            <h3>Или введите штрих-код вручную:</h3>
+            <input type="text" id="manualBarcode" placeholder="Например: 5901234123457">
+            <button id="checkManual" class="btn">🔍 Проверить</button>
+        </div>
+
+        <!-- Результат -->
+        <div id="result" class="result" style="display: none;">
+            <h2 id="productName">Название продукта</h2>
+            <div class="nutrition-grid">
+                <div class="nutrient">
+                    <div class="nutrient-label">🔥 Калории</div>
+                    <div class="nutrient-value" id="calories">0 ккал</div>
+                </div>
+                <div class="nutrient">
+                    <div class="nutrient-label">🥩 Белки</div>
+                    <div class="nutrient-value" id="protein">0 г</div>
+                </div>
+                <div class="nutrient">
+                    <div class="nutrient-label">🥑 Жиры</div>
+                    <div class="nutrient-value" id="fat">0 г</div>
+                </div>
+                <div class="nutrient">
+                    <div class="nutrient-label">🍞 Углеводы</div>
+                    <div class="nutrient-value" id="carbs">0 г</div>
+                </div>
+            </div>
+            
+            <div class="product-info">
+                <h3>📋 Дополнительная информация</h3>
+                <p><strong>Бренд:</strong> <span id="brand">Не указано</span></p>
+                <p><strong>Вес:</strong> <span id="weight">Не указано</span></p>
+                <p><strong>Штрих-код:</strong> <span id="barcode">-</span></p>
+            </div>
+            
+            <button id="saveProduct" class="btn btn-success">💾 Сохранить в историю</button>
+        </div>
+
+        <!-- История -->
+        <div class="history">
+            <h3>📜 История сканирований</h3>
+            <div id="historyList"></div>
+            <button id="clearHistory" class="btn btn-danger">🗑 Очистить историю</button>
+        </div>
+
+        <!-- Инструкция -->
+        <div class="instructions">
+            <h3>💡 Как пользоваться?</h3>
+            <ol>
+                <li>Нажмите "Включить сканер"</li>
+                <li>Разрешите доступ к камере</li>
+                <li>Наведите камеру на штрих-код</li>
+                <li>Информация появится автоматически</li>
+            </ol>
+            <p><strong>Тестовые штрих-коды:</strong></p>
+            <ul>
+                <li>5901234123457 (пример)</li>
+                <li>3017620422003 (Nutella)</li>
+                <li>7622210288257 (Oreo)</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
