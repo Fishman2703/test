@@ -2,11 +2,15 @@
 let currentStream = null;
 let currentProduct = null;
 let isScanning = false;
-let scanInterval = null;
+let scanTimeout = null;
+let currentScanner = null;
+let isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+let isAndroid = /Android/.test(navigator.userAgent);
 
 // ===== ИНИЦИАЛИЗАЦИЯ =====
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 Приложение загружено');
+    console.log(`📱 Платформа: ${isIOS ? 'iOS' : isAndroid ? 'Android' : 'Desktop'}`);
     
     // Инициализация темы
     initTheme();
@@ -156,13 +160,45 @@ async function startCamera() {
             </div>
         `;
         
-        // Запрашиваем доступ к камере (упрощенные настройки для лучшей совместимости)
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: 'environment'
-            },
-            audio: false
-        });
+        // Разные настройки для разных платформ
+        let constraints;
+        
+        if (isAndroid) {
+            // Для Android - упрощенные настройки
+            constraints = {
+                video: {
+                    facingMode: { ideal: 'environment' },
+                    width: { min: 640, ideal: 1280, max: 1920 },
+                    height: { min: 480, ideal: 720, max: 1080 }
+                },
+                audio: false
+            };
+            console.log('🤖 Android: используем упрощенные настройки');
+        } else if (isIOS) {
+            // Для iOS
+            constraints = {
+                video: {
+                    facingMode: { ideal: 'environment' },
+                    width: { min: 640, ideal: 1280 },
+                    height: { min: 480, ideal: 720 }
+                },
+                audio: false
+            };
+            console.log('🍎 iOS: используем специфичные настройки');
+        } else {
+            // Для десктопа
+            constraints = {
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            };
+        }
+        
+        // Запрашиваем доступ к камере
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         
         console.log('✅ Доступ к камере получен');
         currentStream = stream;
@@ -172,22 +208,34 @@ async function startCamera() {
         document.getElementById('startScanner').classList.add('hidden');
         document.getElementById('stopScanner').classList.remove('hidden');
         
-        // Создаём интерфейс камеры
+        // Создаём интерфейс камеры для конкретной платформы
         createCameraUI(stream);
         
-        // Запускаем сканирование
-        startBarcodeScanning();
+        // Запускаем сканирование с учетом платформы
+        startPlatformScanning();
         
         showNotification('Камера активирована', 'success');
         
     } catch (error) {
-        console.error('❌ Ошибка камеры:', error);
+        console.error('❌ Ошибка камеры:', error.name, error.message);
         
         let message = 'Не удалось получить доступ к камере. ';
+        
         if (error.name === 'NotAllowedError') {
-            message += 'Вы отклонили запрос на доступ.';
+            message += 'Вы отклонили запрос на доступ к камере. ';
+            if (isAndroid) {
+                message += 'На Android: зайдите в настройки приложения и разрешите доступ к камере.';
+            } else if (isIOS) {
+                message += 'На iOS: зайдите в Настройки > Safari > Камера и разрешите доступ.';
+            }
         } else if (error.name === 'NotFoundError') {
             message += 'Камера не найдена.';
+        } else if (error.name === 'NotSupportedError') {
+            message += 'Ваш браузер не поддерживает доступ к камере.';
+        } else if (error.name === 'NotReadableError') {
+            message += 'Камера уже используется другим приложением.';
+        } else if (error.name === 'OverconstrainedError') {
+            message += 'Не удалось найти камеру с требуемыми параметрами.';
         } else {
             message += error.message;
         }
@@ -201,34 +249,64 @@ async function startCamera() {
 
 function createCameraUI(stream) {
     const scannerContainer = document.getElementById('qr-reader');
-    scannerContainer.innerHTML = `
-        <div class="camera-container" style="position: relative;">
-            <video id="cameraPreview" autoplay playsinline muted 
-                   style="width: 100%; height: 400px; object-fit: cover; border-radius: var(--radius);"></video>
-            <div class="scan-overlay">
-                <div class="scan-line"></div>
+    
+    if (isAndroid) {
+        // Интерфейс для Android
+        scannerContainer.innerHTML = `
+            <div class="camera-container" style="position: relative;">
+                <video id="cameraPreview" autoplay playsinline muted 
+                       style="width: 100%; height: 400px; object-fit: cover; border-radius: var(--radius);"></video>
+                <div class="scan-overlay">
+                    <div class="scan-line"></div>
+                </div>
+                <div class="scan-hint">
+                    Наведите на штрих-код | Android
+                </div>
             </div>
-            <div class="scan-hint">
-                Наведите камеру на штрих-код
+            <div style="text-align: center; margin-top: 15px;">
+                <button id="switchCameraBtn" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary); margin: 5px;">
+                    <i class="fas fa-sync-alt"></i> Переключить камеру
+                </button>
+                <button id="toggleTorchBtn" class="btn" style="background: var(--warning-color); color: white; margin: 5px;">
+                    <i class="fas fa-lightbulb"></i> Фонарик
+                </button>
             </div>
-        </div>
-        <div style="text-align: center; margin-top: 15px;">
-            <button id="switchCameraBtn" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary); margin: 5px;">
-                <i class="fas fa-sync-alt"></i> Переключить камеру
-            </button>
-        </div>
-    `;
+        `;
+    } else {
+        // Интерфейс для iOS и других
+        scannerContainer.innerHTML = `
+            <div class="camera-container" style="position: relative;">
+                <video id="cameraPreview" autoplay playsinline muted 
+                       style="width: 100%; height: 400px; object-fit: cover; border-radius: var(--radius);"></video>
+                <div class="scan-overlay">
+                    <div class="scan-line"></div>
+                </div>
+                <div class="scan-hint">
+                    Наведите камеру на штрих-код
+                </div>
+            </div>
+            <div style="text-align: center; margin-top: 15px;">
+                <button id="switchCameraBtn" class="btn" style="background: var(--bg-tertiary); color: var(--text-primary); margin: 5px;">
+                    <i class="fas fa-sync-alt"></i> Переключить камеру
+                </button>
+            </div>
+        `;
+    }
     
     // Настраиваем видео
     const video = document.getElementById('cameraPreview');
     video.srcObject = stream;
     
-    // Важно для iOS
+    // Важные атрибуты для мобильных устройств
     video.setAttribute('playsinline', 'true');
     video.setAttribute('webkit-playsinline', 'true');
     
     video.onloadedmetadata = () => {
-        video.play().catch(e => console.log('Ошибка воспроизведения:', e));
+        video.play().catch(e => {
+            console.log('Ошибка воспроизведения:', e);
+            // Пробуем еще раз
+            setTimeout(() => video.play(), 100);
+        });
     };
     
     // Обработчик переключения камеры
@@ -236,129 +314,52 @@ function createCameraUI(stream) {
     if (switchBtn) {
         switchBtn.addEventListener('click', () => switchCamera(stream, video));
     }
-}
-
-// ===== СКАНИРОВАНИЕ ШТРИХ-КОДОВ =====
-function startBarcodeScanning() {
-    console.log('🔍 Запуск сканирования штрих-кодов...');
     
-    // Проверяем, загружена ли библиотека ZXing
-    if (typeof ZXing === 'undefined') {
-        console.error('ZXing не загружен');
-        showNotification('Библиотека сканирования не загружена', 'error');
-        return;
-    }
-    
-    const video = document.getElementById('cameraPreview');
-    if (!video) return;
-    
-    // Создаём экземпляр сканера
-    const codeReader = new ZXing.BrowserMultiFormatReader();
-    
-    console.log('✅ Сканер инициализирован');
-    
-    // Настраиваем форматы для сканирования
-    const formats = [
-        ZXing.BarcodeFormat.EAN_13,
-        ZXing.BarcodeFormat.EAN_8,
-        ZXing.BarcodeFormat.UPC_A,
-        ZXing.BarcodeFormat.UPC_E,
-        ZXing.BarcodeFormat.CODE_128,
-        ZXing.BarcodeFormat.CODE_39,
-        ZXing.BarcodeFormat.QR_CODE,
-        ZXing.BarcodeFormat.DATA_MATRIX
-    ];
-    
-    codeReader.hints = new Map([
-        [ZXing.DecodeHintType.POSSIBLE_FORMATS, formats],
-        [ZXing.DecodeHintType.TRY_HARDER, true]
-    ]);
-    
-    // Создаём canvas для захвата кадра
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    
-    let lastScanTime = 0;
-    const SCAN_INTERVAL = 500; // Сканировать каждые 500ms
-    
-    // Функция сканирования кадра
-    function scanFrame() {
-        if (!isScanning || !video.videoWidth) {
-            return;
-        }
-        
-        const now = Date.now();
-        if (now - lastScanTime < SCAN_INTERVAL) {
-            // Слишком часто сканируем, пропускаем кадр
-            requestAnimationFrame(scanFrame);
-            return;
-        }
-        
-        lastScanTime = now;
-        
-        try {
-            // Устанавливаем размер canvas как у видео
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            
-            // Рисуем текущий кадр видео на canvas
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // Пытаемся распознать штрих-код
-            codeReader.decodeFromCanvas(canvas)
-                .then(result => {
-                    console.log('✅ Найден штрих-код:', result.text, 'Формат:', result.format);
-                    
-                    // Останавливаем сканирование
-                    stopCamera();
-                    
-                    // Обрабатываем результат
-                    handleScanResult(result.text, result.format);
-                    
-                    // Воспроизводим звук успеха
-                    playSuccessSound();
-                    
-                    // Показываем уведомление
-                    showNotification('Штрих-код распознан!', 'success');
-                })
-                .catch(error => {
-                    // Это нормально - штрих-код не найден в этом кадре
-                    // Продолжаем сканирование
-                    if (isScanning) {
-                        requestAnimationFrame(scanFrame);
-                    }
-                });
-                
-        } catch (error) {
-            console.error('Ошибка при сканировании:', error);
-            if (isScanning) {
-                setTimeout(scanFrame, 100);
-            }
+    // Кнопка фонарика только для Android
+    if (isAndroid) {
+        const torchBtn = document.getElementById('toggleTorchBtn');
+        if (torchBtn) {
+            torchBtn.addEventListener('click', () => toggleTorch(stream));
         }
     }
-    
-    // Запускаем сканирование
-    scanFrame();
-    
-    console.log('🎬 Сканирование запущено');
 }
 
-// Альтернативный метод сканирования через BarcodeDetector API (если доступен)
+// ===== СКАНИРОВАНИЕ ДЛЯ РАЗНЫХ ПЛАТФОРМ =====
+function startPlatformScanning() {
+    console.log(`🔍 Запуск сканирования для ${isAndroid ? 'Android' : isIOS ? 'iOS' : 'Desktop'}...`);
+    
+    // Сначала пробуем BarcodeDetector API (лучше для Android)
+    if (typeof BarcodeDetector !== 'undefined' && isAndroid) {
+        console.log('📱 Android: используем BarcodeDetector API');
+        startBarcodeDetectorScanning();
+    } else {
+        // Используем ZXing для iOS и других платформ
+        console.log('📚 Используем ZXing библиотеку');
+        startZXingScanning();
+    }
+}
+
+// Сканирование через BarcodeDetector API (лучше для Android)
 function startBarcodeDetectorScanning() {
     const video = document.getElementById('cameraPreview');
     if (!video) return;
     
-    // Проверяем поддержку BarcodeDetector API
-    if ('BarcodeDetector' in window) {
-        console.log('📱 Используем BarcodeDetector API');
-        
+    try {
+        // Создаем детектор для всех форматов
         const barcodeDetector = new BarcodeDetector({
-            formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code', 'datamatrix']
+            formats: [
+                'ean_13', 'ean_8', 'upc_a', 'upc_e',
+                'code_128', 'code_39', 'code_93',
+                'codabar', 'itf', 'qr_code', 'data_matrix',
+                'aztec', 'pdf417'
+            ]
         });
+        
+        console.log('✅ BarcodeDetector создан');
         
         let isProcessing = false;
         
-        async function detectBarcode() {
+        async function detectFrame() {
             if (!isScanning || isProcessing || !video.videoWidth) return;
             
             isProcessing = true;
@@ -368,119 +369,170 @@ function startBarcodeDetectorScanning() {
                 
                 if (barcodes.length > 0) {
                     const barcode = barcodes[0];
-                    console.log('✅ BarcodeDetector нашел код:', barcode.rawValue);
+                    console.log('✅ BarcodeDetector нашел:', barcode.rawValue, 'Формат:', barcode.format);
                     
                     stopCamera();
                     handleScanResult(barcode.rawValue, barcode.format);
                     playSuccessSound();
-                    showNotification('Штрих-код распознан!', 'success');
                     return;
                 }
             } catch (error) {
                 console.log('BarcodeDetector ошибка:', error);
+                // Переключаемся на ZXing при ошибке
+                if (isScanning) {
+                    console.log('🔄 Переключаемся на ZXing...');
+                    startZXingScanning();
+                    return;
+                }
             } finally {
                 isProcessing = false;
             }
             
             if (isScanning) {
-                requestAnimationFrame(detectBarcode);
+                requestAnimationFrame(detectFrame);
             }
         }
         
-        detectBarcode();
-    } else {
-        console.log('⚠️ BarcodeDetector не поддерживается, используем ZXing');
-        startBarcodeScanning();
-    }
-}
-
-// ===== ОБРАБОТКА РЕЗУЛЬТАТОВ СКАНИРОВАНИЯ =====
-function handleScanResult(code, format) {
-    console.log('📊 Обработка результата:', code, 'Формат:', format);
-    
-    // Определяем тип кода
-    const codeType = detectCodeType(code, format);
-    console.log('📋 Тип кода:', codeType);
-    
-    switch(codeType) {
-        case 'ean13':
-        case 'ean8':
-        case 'upca':
-        case 'upce':
-        case 'code128':
-        case 'code39':
-            // Это штрих-код продукта
-            searchProduct(code);
-            break;
-            
-        case 'datamatrix':
-            // Честный знак (DataMatrix)
-            processDataMatrixCode(code);
-            break;
-            
-        case 'qr_code':
-            // QR-код
-            if (code.startsWith('http://') || code.startsWith('https://')) {
-                showNotification(`QR-код содержит ссылку: ${code.substring(0, 30)}...`, 'info');
-                // Можно открыть ссылку в новом окне
-                // window.open(code, '_blank');
-            } else {
-                showNotification(`QR-код: ${code.substring(0, 50)}...`, 'info');
-            }
-            break;
-            
-        default:
-            // Неизвестный формат, пробуем как штрих-код
-            if (code.length >= 8 && /^\d+$/.test(code)) {
-                searchProduct(code);
-            } else {
-                showNotification(`Распознан код: ${code}`, 'info');
-            }
-    }
-}
-
-function detectCodeType(code, format) {
-    // Если формат передан, используем его
-    if (format) {
-        return format.toString().toLowerCase();
-    }
-    
-    // Определяем по длине и формату
-    if (code.length === 13 && /^\d+$/.test(code)) {
-        return 'ean13';
-    } else if (code.length === 8 && /^\d+$/.test(code)) {
-        return 'ean8';
-    } else if (code.length === 12 && /^\d+$/.test(code)) {
-        return 'upca';
-    } else if (code.length === 7 && /^\d+$/.test(code)) {
-        return 'upce';
-    } else if (/^01\d{14}21[A-Za-z0-9]{13}$/.test(code)) {
-        return 'datamatrix'; // Честный знак
-    } else if (code.startsWith('http')) {
-        return 'qr_code';
-    }
-    
-    return 'unknown';
-}
-
-function processDataMatrixCode(code) {
-    console.log('🏷️ Обработка DataMatrix кода (Честный знак):', code);
-    
-    // Пробуем извлечь GTIN из кода маркировки
-    const gtinMatch = code.match(/01(\d{14})/);
-    if (gtinMatch) {
-        const gtin = gtinMatch[1];
-        console.log('📦 Извлечен GTIN:', gtin);
+        detectFrame();
         
-        // Показываем информацию о маркировке
-        showNotification('Распознан код маркировки "Честный знак"', 'success');
+    } catch (error) {
+        console.error('❌ Ошибка BarcodeDetector:', error);
+        // Возвращаемся к ZXing
+        startZXingScanning();
+    }
+}
+
+// Сканирование через ZXing (универсальное)
+function startZXingScanning() {
+    const video = document.getElementById('cameraPreview');
+    if (!video) return;
+    
+    // Проверяем, загружена ли библиотека ZXing
+    if (typeof ZXing === 'undefined') {
+        console.error('❌ ZXing не загружен');
+        showNotification('Ошибка загрузки сканера', 'error');
+        return;
+    }
+    
+    try {
+        // Создаём экземпляр сканера
+        currentScanner = new ZXing.BrowserMultiFormatReader();
         
-        // Ищем продукт по GTIN
-        setTimeout(() => {
-            searchProduct(gtin);
-        }, 1000);
-    } else {
-        showNotification('Распознан DataMatrix код', 'info');
+        // Настраиваем форматы для сканирования
+        const formats = [
+            ZXing.BarcodeFormat.EAN_13,
+            ZXing.BarcodeFormat.EAN_8,
+            ZXing.BarcodeFormat.UPC_A,
+            ZXing.BarcodeFormat.UPC_E,
+            ZXing.BarcodeFormat.CODE_128,
+            ZXing.BarcodeFormat.CODE_39,
+            ZXing.BarcodeFormat.QR_CODE,
+            ZXing.BarcodeFormat.DATA_MATRIX
+        ];
+        
+        // Добавляем подсказки для лучшего распознавания
+        if (currentScanner.hints) {
+            currentScanner.hints.set(
+                ZXing.DecodeHintType.POSSIBLE_FORMATS,
+                formats
+            );
+            currentScanner.hints.set(
+                ZXing.DecodeHintType.TRY_HARDER,
+                true
+            );
+        }
+        
+        console.log('✅ ZXing сканер создан');
+        
+        // Для Android используем более частый опрос
+        const scanDelay = isAndroid ? 300 : 500;
+        
+        // Функция сканирования
+        function scanWithZXing() {
+            if (!isScanning || !video.videoWidth) return;
+            
+            try {
+                // Создаем canvas для текущего кадра
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                
+                // Устанавливаем размер canvas
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                // Рисуем кадр видео
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Пытаемся распознать штрих-код
+                currentScanner.decodeFromCanvas(canvas)
+                    .then(result => {
+                        console.log('✅ ZXing нашел:', result.text, 'Формат:', result.format);
+                        
+                        stopCamera();
+                        handleScanResult(result.text, result.format);
+                        playSuccessSound();
+                    })
+                    .catch(error => {
+                        // Штрих-код не найден - это нормально
+                        // Продолжаем сканирование
+                        if (isScanning) {
+                            setTimeout(scanWithZXing, scanDelay);
+                        }
+                    });
+                    
+            } catch (error) {
+                console.log('Ошибка сканирования ZXing:', error);
+                if (isScanning) {
+                    setTimeout(scanWithZXing, scanDelay);
+                }
+            }
+        }
+        
+        // Запускаем сканирование
+        scanWithZXing();
+        
+    } catch (error) {
+        console.error('❌ Ошибка инициализации ZXing:', error);
+        showNotification('Ошибка сканирования', 'error');
+    }
+}
+
+// ===== ФОНАРИК ДЛЯ ANDROID =====
+async function toggleTorch(stream) {
+    if (!stream) return;
+    
+    try {
+        const track = stream.getVideoTracks()[0];
+        
+        // Проверяем поддержку фонарика
+        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+        
+        if ('torch' in capabilities) {
+            const torchBtn = document.getElementById('toggleTorchBtn');
+            const currentTorch = track.getConstraints().torch || false;
+            
+            await track.applyConstraints({
+                advanced: [{ torch: !currentTorch }]
+            });
+            
+            if (torchBtn) {
+                if (!currentTorch) {
+                    torchBtn.innerHTML = '<i class="fas fa-lightbulb"></i> Выкл.';
+                    torchBtn.style.background = 'var(--danger-color)';
+                    showNotification('Фонарик включен', 'success');
+                } else {
+                    torchBtn.innerHTML = '<i class="fas fa-lightbulb"></i> Вкл.';
+                    torchBtn.style.background = 'var(--warning-color)';
+                    showNotification('Фонарик выключен', 'info');
+                }
+            }
+        } else {
+            showNotification('Фонарик не поддерживается на этом устройстве', 'warning');
+        }
+        
+    } catch (error) {
+        console.error('Ошибка фонарика:', error);
+        showNotification('Не удалось включить фонарик', 'error');
     }
 }
 
@@ -523,9 +575,19 @@ function stopCamera() {
         currentStream = null;
     }
     
-    if (scanInterval) {
-        clearInterval(scanInterval);
-        scanInterval = null;
+    if (scanTimeout) {
+        clearTimeout(scanTimeout);
+        scanTimeout = null;
+    }
+    
+    // Останавливаем сканер ZXing если активен
+    if (currentScanner && currentScanner.reset) {
+        try {
+            currentScanner.reset();
+        } catch (e) {
+            console.log('Ошибка при остановке сканера:', e);
+        }
+        currentScanner = null;
     }
     
     // Обновляем UI
@@ -547,6 +609,88 @@ function stopCamera() {
     }
     
     showNotification('Сканирование остановлено', 'info');
+}
+
+// ===== ОБРАБОТКА РЕЗУЛЬТАТОВ =====
+function handleScanResult(code, format) {
+    console.log('📊 Обработка результата:', code, 'Формат:', format);
+    
+    // Определяем тип кода
+    const codeType = detectCodeType(code, format);
+    console.log('📋 Тип кода:', codeType);
+    
+    switch(codeType) {
+        case 'ean13':
+        case 'ean8':
+        case 'upca':
+        case 'upce':
+        case 'code128':
+        case 'code39':
+            // Штрих-код продукта
+            searchProduct(code);
+            break;
+            
+        case 'datamatrix':
+        case 'data_matrix':
+            // Честный знак
+            processDataMatrixCode(code);
+            break;
+            
+        case 'qr_code':
+            // QR-код
+            if (code.startsWith('http')) {
+                showNotification(`QR-код: ${code.substring(0, 30)}...`, 'info');
+            } else {
+                showNotification(`QR-код: ${code.substring(0, 50)}...`, 'info');
+            }
+            break;
+            
+        default:
+            // Пробуем как штрих-код
+            if (code.length >= 8 && /^\d+$/.test(code)) {
+                searchProduct(code);
+            } else {
+                showNotification(`Код: ${code.substring(0, 30)}...`, 'info');
+            }
+    }
+}
+
+function detectCodeType(code, format) {
+    if (format) {
+        return format.toString().toLowerCase();
+    }
+    
+    if (code.length === 13 && /^\d+$/.test(code)) {
+        return 'ean13';
+    } else if (code.length === 8 && /^\d+$/.test(code)) {
+        return 'ean8';
+    } else if (code.length === 12 && /^\d+$/.test(code)) {
+        return 'upca';
+    } else if (/^01\d{14}21[A-Za-z0-9]{13}$/.test(code)) {
+        return 'datamatrix';
+    } else if (code.startsWith('http')) {
+        return 'qr_code';
+    }
+    
+    return 'unknown';
+}
+
+function processDataMatrixCode(code) {
+    console.log('🏷️ Обработка DataMatrix кода:', code);
+    
+    // Извлекаем GTIN из кода маркировки
+    const gtinMatch = code.match(/01(\d{14})/);
+    if (gtinMatch) {
+        const gtin = gtinMatch[1];
+        showNotification('Распознан код маркировки', 'success');
+        
+        // Ищем продукт по GTIN
+        setTimeout(() => {
+            searchProduct(gtin);
+        }, 1000);
+    } else {
+        showNotification('Распознан DataMatrix код', 'info');
+    }
 }
 
 // ===== ПОИСК ПРОДУКТА =====
@@ -573,7 +717,7 @@ async function searchProduct(barcode) {
         showLoading(true);
         console.log(`🔍 Поиск продукта: ${barcode}`);
         
-        // Тестовые данные для демонстрации
+        // Тестовые данные
         const testProducts = {
             '3017620422003': {
                 name: 'Nutella',
@@ -614,20 +758,10 @@ async function searchProduct(barcode) {
                 carbs: '10.6',
                 weight: '330ml',
                 source: 'Демо-данные'
-            },
-            '5901234123457': {
-                name: 'Молочный шоколад',
-                brand: 'Пример бренда',
-                calories: '550',
-                protein: '8',
-                fat: '32',
-                carbs: '55',
-                weight: '100g',
-                source: 'Демо-данные'
             }
         };
         
-        // Сначала проверяем тестовые данные
+        // Используем тестовые данные
         if (testProducts[barcode]) {
             setTimeout(() => {
                 displayProduct(testProducts[barcode], barcode);
@@ -637,18 +771,8 @@ async function searchProduct(barcode) {
         }
         
         // Пробуем Open Food Facts API
-        showNotification('Ищем в базе данных...', 'info');
-        
         try {
-            const response = await fetch(
-                `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`,
-                {
-                    headers: {
-                        'User-Agent': 'NutritionScanner/1.0'
-                    },
-                    timeout: 10000
-                }
-            );
+            const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
             
             if (response.ok) {
                 const data = await response.json();
@@ -658,28 +782,13 @@ async function searchProduct(barcode) {
                     const nutrition = product.nutriments || {};
                     
                     displayProduct({
-                        name: product.product_name || 
-                              product.product_name_ru || 
-                              product.product_name_en || 
-                              'Неизвестный продукт',
-                        brand: product.brands || 
-                              product.brand_owner || 
-                              'Не указано',
-                        calories: nutrition['energy-kcal'] || 
-                                 nutrition['energy-kcal_100g'] || 
-                                 nutrition.energy || 
-                                 '0',
-                        protein: nutrition.proteins || 
-                                nutrition['proteins_100g'] || 
-                                '0',
-                        fat: nutrition.fat || 
-                             nutrition['fat_100g'] || 
-                             '0',
-                        carbs: nutrition.carbohydrates || 
-                               nutrition['carbohydrates_100g'] || 
-                               '0',
-                        weight: product.quantity || 
-                               (product.product_quantity ? `${product.product_quantity}g` : 'Не указано'),
+                        name: product.product_name || 'Неизвестный продукт',
+                        brand: product.brands || 'Не указано',
+                        calories: nutrition['energy-kcal'] || '0',
+                        protein: nutrition.proteins || '0',
+                        fat: nutrition.fat || '0',
+                        carbs: nutrition.carbohydrates || '0',
+                        weight: product.quantity || 'Не указано',
                         source: 'Open Food Facts'
                     }, barcode);
                     
@@ -688,10 +797,10 @@ async function searchProduct(barcode) {
                 }
             }
         } catch (apiError) {
-            console.log('Open Food Facts API error:', apiError);
+            console.log('API error:', apiError);
         }
         
-        // Если продукт не найден
+        // Продукт не найден
         displayProduct({
             name: `Продукт ${barcode}`,
             brand: 'Неизвестный бренд',
@@ -702,8 +811,6 @@ async function searchProduct(barcode) {
             weight: 'Не указано',
             source: 'Не найдено'
         }, barcode);
-        
-        showNotification('Продукт не найден в базе', 'warning');
         
     } catch (error) {
         console.error('❌ Ошибка поиска:', error);
@@ -843,7 +950,6 @@ function saveToHistory() {
         showNotification('Сохранено в историю', 'success');
     }
     
-    // Ограничиваем историю 50 записями
     const limitedHistory = history.slice(-50);
     localStorage.setItem('bjuHistory', JSON.stringify(limitedHistory));
     
@@ -908,7 +1014,6 @@ function showLoading(show) {
 
 function playSuccessSound() {
     try {
-        // Создаём простой звуковой сигнал
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
@@ -930,7 +1035,6 @@ function playSuccessSound() {
 }
 
 function showNotification(message, type = 'info') {
-    // Создаём элемент уведомления, если его нет
     let notification = document.getElementById('notification');
     if (!notification) {
         notification = document.createElement('div');
@@ -939,7 +1043,6 @@ function showNotification(message, type = 'info') {
         document.body.appendChild(notification);
     }
     
-    // Устанавливаем цвет в зависимости от типа
     const colors = {
         success: '#2ecc71',
         error: '#e74c3c',
@@ -951,7 +1054,6 @@ function showNotification(message, type = 'info') {
     notification.style.background = colors[type] || colors.info;
     notification.classList.remove('hidden');
     
-    // Автоматически скрываем через 3 секунды
     setTimeout(() => {
         notification.classList.add('hidden');
     }, 3000);
@@ -974,13 +1076,18 @@ setTimeout(() => {
     showNotification('Сканер БЖУ готов к работе!', 'success');
 }, 1000);
 
-// Тестовые функции для отладки
-window.testScanner = function(barcode = '3017620422003') {
-    console.log('🧪 Тестовое сканирование:', barcode);
-    handleScanResult(barcode, 'ean13');
+// Функции для отладки
+window.testBarcode = function(code = '3017620422003') {
+    console.log('🧪 Тестируем штрих-код:', code);
+    handleScanResult(code, 'ean13');
 };
 
-window.clearAllData = function() {
-    localStorage.clear();
-    location.reload();
+window.getDeviceInfo = function() {
+    return {
+        platform: isAndroid ? 'Android' : isIOS ? 'iOS' : 'Desktop',
+        userAgent: navigator.userAgent,
+        supportsBarcodeDetector: typeof BarcodeDetector !== 'undefined',
+        supportsZXing: typeof ZXing !== 'undefined',
+        supportsCamera: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+    };
 };
